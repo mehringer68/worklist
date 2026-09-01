@@ -1,0 +1,14 @@
+.DS_Store
+
+# This repo is the template, not a live store. Keep the empty dirs, ignore
+# anything the demo or a real store writes into them.
+worklist/items/*
+!worklist/items/.gitkeep
+worklist/views/*
+!worklist/views/.gitkeep
+worklist/attachments/*
+!worklist/attachments/.gitkeep
+
+# The capture target. Gitignored so that a stash typed inside this clone can never
+# become a public commit; install.sh creates it in the target repo instead.
+worklist/inbox.md
