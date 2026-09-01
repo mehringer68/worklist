@@ -5,11 +5,25 @@
 //   node worklist/bin/make-fixtures.mjs           generate
 //   node worklist/bin/make-fixtures.mjs --clean   remove every fixture, leave real items
 
-import { readdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ITEMS = join(dirname(fileURLToPath(import.meta.url)), '..', 'items');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const ITEMS = join(ROOT, 'items');
+
+// Same config.json the renderer reads. Only the caps matter here, and only so the demo obeys
+// them; render.mjs is what validates the file and complains about a bad one.
+const CAPS = (() => {
+  const d = { now: 1, side: 3, next: 7 };
+  const f = join(ROOT, 'config.json');
+  if (!existsSync(f)) return d;
+  try {
+    return { ...d, ...(JSON.parse(readFileSync(f, 'utf8')).caps || {}) };
+  } catch {
+    return d;
+  }
+})();
 const ago = (d) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
 const ahead = (d) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
 
@@ -121,12 +135,37 @@ const ART = [
   'jira:DEMO-101 | DEMO-101 example ticket | https://example.invalid/browse/DEMO-101',
   'slack:C0DEMO:1750000000.0001 | thread in #demo-channel | https://example.invalid/archives/C0DEMO',
   'pr:demo/repo#42 | PR #42 example change | https://example.invalid/pull/42',
-  'email:<demo-001@example.invalid> | Re: example thread — 3 replies | readdle-spark://message/demo-001',
+  'email:<demo-001@example.invalid> | Re: example thread — 3 replies | https://example.invalid/mail/demo-001',
   'web:demo-dashboard | dashboard panel | https://example.invalid/d/demo',
   'claude:00000000-0000-0000-0000-000000000001 | earlier session — resume with `claude --resume 00000000-0000-0000-0000-000000000001` | ',
   'file:repo | notes/demo-analysis.md | ./notes/demo-analysis.md',
   'web:confluence | background page | https://example.invalid/wiki/demo',
 ];
+
+// ---------- deal the live bands ----------
+// The caps are the system's headline claim, so a demo that opens at `next 8/7` argues against
+// the tool it is demonstrating. Everything demotable starts in `later`, then now/side/next are
+// filled to exactly their configured caps and the rest stays in `later`, which is where the
+// bulk of a real store lives anyway. Items with `waiting_on` set are never dealt into a live
+// band: the ball is with someone else, so they belong in `waiting`.
+const W = { S: 1, M: 2, L: 3 };
+const POOLABLE = new Set(['now', 'side', 'next', 'later']);
+const pool = SPECS.filter((sp) => POOLABLE.has(sp[2]) && sp[9] === '');
+for (const sp of pool) sp[2] = 'later';
+
+// f900 below is 45 days overdue against a *committed* date, which is exactly what `now` is
+// for, so it claims the first slot and the demo shows that ranking instead of contradicting it.
+const OVERDUE_DEMO_BAND = 'now';
+const free = () => pool.filter((sp) => sp[2] === 'later');
+const claim = (list, b) => { for (const sp of list) sp[2] = b; };
+const dated = (sp) => sp[6] !== null;
+
+// now: a real date first, then consequence, then the lighter of two equals.
+claim(free().filter(dated).sort((a, b) => b[4] - a[4] || W[a[5]] - W[b[5]]).slice(0, Math.max(0, CAPS.now - 1)), 'now');
+// side: lightest first. Side work exists to be picked up while `now` is blocked.
+claim(free().sort((a, b) => W[a[5]] - W[b[5]] || b[4] - a[4]).slice(0, CAPS.side), 'side');
+// next: the promote-from queue, highest consequence first.
+claim(free().sort((a, b) => b[4] - a[4] || W[a[5]] - W[b[5]]).slice(0, CAPS.next), 'next');
 
 let n = 0;
 for (const [slug, title, status, hat, impact, effort, dueOff, dueSrc, owner, waitOn, labels, arts, created, why, next] of SPECS) {
@@ -164,7 +203,7 @@ writeFileSync(
 id: f900
 title: Send the capacity note that was promised at the last planning session
 fixture: true
-status: side
+status: ${OVERDUE_DEMO_BAND}
 hat: pm
 impact: 2
 effort: S

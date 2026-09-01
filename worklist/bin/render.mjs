@@ -2,7 +2,7 @@
 // Deterministic renderer. No LLM, no dependencies.
 // Every view is a pure projection of items/. Never hand-edit views/.
 
-import { readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,16 +10,57 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ITEMS = join(ROOT, 'items');
 const VIEWS = join(ROOT, 'views');
 
-// Cascading WIP limits. One thing in your head; three light things to pick up when that one
-// is blocked; seven to promote from. Everything else is deliberately out of sight.
-const CAPS = { now: 1, side: 3, next: 7 };
-const NAG_DAYS = 3;
+// ---------- config ----------
+// `worklist/config.json` is the one place a store is tuned, and both this script and the skill
+// read it. It is optional; the defaults below are the shipped ones. A malformed config stops
+// the render instead of falling back silently, because a cap the user did not choose is worse
+// than no render at all.
+const CONFIG_PATH = join(ROOT, 'config.json');
+const DEFAULTS = {
+  // Cascading WIP limits. One thing in your head; three light things to pick up when that one
+  // is blocked; seven to promote from. Everything else is deliberately out of sight.
+  caps: { now: 1, side: 3, next: 7 },
+  // What happens when a band is at cap and something new belongs in it. This script only
+  // reports; the agent is what enforces. See .claude/skills/worklist/SKILL.md.
+  //   tolerated            going over cap is fine, the count is reported without alarm
+  //   enforce-interactive  something must leave; the agent asks when the choice is not obvious
+  //   enforce-autonomous   something must leave; the agent decides and never asks
+  overflow: 'enforce-interactive',
+  // Labels for work with reserved time elsewhere (a calendar block). Track items sit in
+  // `later` permanently, never compete for a band, and get their own chip. Empty by default.
+  tracks: [],
+};
+const OVERFLOW_MODES = ['tolerated', 'enforce-interactive', 'enforce-autonomous'];
 
-// Tracks are labels that get their own chip. A track is work that does not compete for the
-// bands at all — it has reserved time elsewhere (a calendar block), so its items sit in
-// `later` on purpose and are picked up per block. The chip is how you see that bucket at the
-// start of a block, since `later` is collapsed by default and labels are otherwise unfilterable.
-const TRACKS = ['oss'];
+function loadConfig() {
+  if (!existsSync(CONFIG_PATH)) return DEFAULTS;
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
+  } catch (e) {
+    throw new Error(`config.json is not valid JSON: ${e.message}`);
+  }
+  const caps = { ...DEFAULTS.caps, ...(raw.caps || {}) };
+  for (const k of ['now', 'side', 'next']) {
+    if (!Number.isInteger(caps[k]) || caps[k] < 1)
+      throw new Error(`config.json: caps.${k} must be a whole number of 1 or more, got ${JSON.stringify(caps[k])}`);
+  }
+  const overflow = raw.overflow ?? DEFAULTS.overflow;
+  if (!OVERFLOW_MODES.includes(overflow))
+    throw new Error(`config.json: overflow must be one of ${OVERFLOW_MODES.join(' | ')}, got ${JSON.stringify(overflow)}`);
+  const tracks = raw.tracks ?? DEFAULTS.tracks;
+  if (!Array.isArray(tracks) || tracks.some((t) => typeof t !== 'string'))
+    throw new Error('config.json: tracks must be an array of label strings');
+  return { caps, overflow, tracks };
+}
+
+const CONFIG = loadConfig();
+const CAPS = CONFIG.caps;
+const TRACKS = CONFIG.tracks;
+// Only the enforce- modes treat over-cap as a fault. Under `tolerated` the count is still shown,
+// just without the warning, because the number is useful even when exceeding it is allowed.
+const ENFORCED = CONFIG.overflow !== 'tolerated';
+const NAG_DAYS = 3;
 const BANDS = ['now', 'side', 'next', 'waiting', 'later', 'done', 'dropped'];
 const WEIGHT = { S: 1, M: 2, L: 3 };
 // A closed item cannot be late. Dates on done and dropped items are history, not obligations.
@@ -140,7 +181,9 @@ let index = `# worklist — ${items.length} items (${fixtures.length} fixtures, 
 for (const s of BANDS) {
   const b = band(s);
   if (!b.length) continue;
-  const cap = CAPS[s] && b.length > CAPS[s] ? `  ⚠ over cap of ${CAPS[s]}` : '';
+  const cap = CAPS[s] && b.length > CAPS[s]
+    ? (ENFORCED ? `  ⚠ OVER CAP of ${CAPS[s]}` : `  (over the tolerated cap of ${CAPS[s]})`)
+    : '';
   index += `\n## ${s} (${b.length})${cap}\n\n\`\`\`\n${b.map(line).join('\n')}\n\`\`\`\n`;
 }
 if (parked.length) {
@@ -161,7 +204,8 @@ let todayMd = `# today — ${today.toISOString().slice(0, 10)}\n\n## NOW\n\n`;
 todayMd += nowB.length
   ? `**${nowB[0].title}**\n\`${nowB[0].id}\` · ${nowB[0].hat} · effort ${nowB[0].effort} · impact ${nowB[0].impact}\n\n→ ${oneLine(nowB[0].body['next action'])}`
   : '_Nothing in now. Promote one from next._';
-if (nowB.length > 1) todayMd += `\n\n> ⚠ ${nowB.length} items in \`now\`. There should be one.`;
+if (nowB.length > CAPS.now)
+  todayMd += `\n\n> ⚠ ${nowB.length} items in \`now\`. The cap is ${CAPS.now}.`;
 
 todayMd += `\n\n## SIDE — for when NOW is blocked (${sideB.length}/${CAPS.side})\n\n`;
 todayMd += sideB.length ? sideB.map(brief).join('\n') : '_empty_';
@@ -307,7 +351,7 @@ const section = (key, list, desc, open) => list.length ? `
 <details class="band" data-band="${key}" data-default-open="${open ? 1 : 0}" ${open ? 'open' : ''}>
   <summary class="bandhead">
     <span class="bname">${key}</span><span class="bdesc">${desc}</span>
-    <span class="bcount${CAPS[key] && list.length > CAPS[key] ? ' over' : ''}" data-total="${list.length}" data-full="${list.length}${CAPS[key] ? '/' + CAPS[key] : ''}">${list.length}${CAPS[key] ? '/' + CAPS[key] : ''}</span>
+    <span class="bcount${ENFORCED && CAPS[key] && list.length > CAPS[key] ? ' over' : ''}" data-total="${list.length}" data-full="${list.length}${CAPS[key] ? '/' + CAPS[key] : ''}">${list.length}${CAPS[key] ? '/' + CAPS[key] : ''}</span>
   </summary>
   <div class="rows">${list.map(key === 'now' ? hero : row).join('')}</div>
 </details>` : '';
@@ -733,4 +777,13 @@ writeFileSync(join(VIEWS, 'index.html'), html);
 console.log(`rendered ${items.length} items -> views/{index.md,today.md,waiting.md,index.html}`);
 console.log(`  now ${nowB.length}/${CAPS.now} · side ${sideB.length}/${CAPS.side} · next ${nextB.length}/${CAPS.next}`);
 console.log(`  overdue ${overdue.length} · chases ${chases.length} · parked ${parked.length}`);
+const LIVE_BANDS = { now: nowB, side: sideB, next: nextB };
+const over = Object.keys(LIVE_BANDS).filter((s) => LIVE_BANDS[s].length > CAPS[s]);
+const under = Object.keys(LIVE_BANDS).filter((s) => LIVE_BANDS[s].length < CAPS[s]);
+const fmtBands = (ks) => ks.map((s) => `${s} ${LIVE_BANDS[s].length}/${CAPS[s]}`).join(', ');
+console.log(`  overflow: ${CONFIG.overflow}`);
+if (over.length) console.log(`  ${ENFORCED ? '⚠ OVER CAP' : 'over tolerated cap'}: ${fmtBands(over)}`);
+// Under-full is a filing gap, not an overflow fault, so it is reported in every mode: a band
+// with a free slot means something in `later` should have been promoted into it.
+if (under.length) console.log(`  under-full, promote from later: ${fmtBands(under)}`);
 if (tabConfigs) console.log(`  ${tabConfigs} warp tab config(s) -> ${TAB_CONFIGS}`);

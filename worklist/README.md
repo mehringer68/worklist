@@ -17,6 +17,7 @@ worklist/
     today.md                the `now` band + overdue + stale chases
     waiting.md              what other people owe you
   bin/render.mjs            deterministic renderer, no LLM, no dependencies
+  config.json               band caps + overflow policy — the only tunable file
   inbox.md                  raw captures, one line, zero decisions
 ```
 
@@ -31,7 +32,7 @@ if a view is ever wrong you re-render it, you do not argue with a model.
 |---|---|---|
 | `id` | `wNNN` | identity; never changes, never reused |
 | `title` | one line | must fit an index row |
-| `status` | `now` `side` `next` `waiting` `later` `done` `dropped` | cascading WIP caps: **now 1, side 3, next 7** |
+| `status` | `now` `side` `next` `waiting` `later` `done` `dropped` | cascading WIP caps, set in `config.json` (default **now 1, side 3, next 7**) |
 | `hat` | closed list (see below) | what mode the work is in; the day is batched by this |
 | `impact` | 1-3 | 3 requires a falsifiable consequence in the body |
 | `effort` | S M L | |
@@ -108,16 +109,48 @@ dependency hides work silently, which is the same failure as a wrong merge.
 Your grouping is binding: links you put on one line are one item, always. Connections I spot
 that you did not make are surfaced as *possible duplicate of wNNN*, never merged silently.
 
+## config.json
+
+The one tunable file. Both `bin/render.mjs` and the skill read it, so a change here changes
+both what the renderer reports and how the agent bands. Delete it and the defaults below apply.
+
+```json
+{
+  "caps": { "now": 1, "side": 3, "next": 7 },
+  "overflow": "enforce-interactive",
+  "tracks": []
+}
+```
+
+| Key | Values | Meaning |
+|---|---|---|
+| `caps` | whole numbers, 1 or more | how many items each live band holds |
+| `overflow` | `tolerated` `enforce-interactive` `enforce-autonomous` | what happens when a band is at cap and something new belongs in it |
+| `tracks` | array of label strings | labels for work with reserved time elsewhere; see Tracks below |
+
+**`overflow` is the decision worth thinking about.** The bands are meant to be full, so almost
+every new item arrives at a band with no room:
+
+- **`tolerated`** — put it in, let the band run over. The count still shows, without a warning.
+- **`enforce-interactive`** — something must leave. If one candidate is clearly weakest the agent
+  displaces it and tells you in one line; if the call is close it asks you.
+- **`enforce-autonomous`** — same, but it never asks. It decides and reports.
+
+Either `enforce-` mode means a band never ends a turn over cap. An item you have marked
+`started` is never displaced silently, in any mode. A bad value stops the render with a message
+naming the key, rather than falling back to a cap you did not choose.
+
 ## Tracks
 
-A **track** is work whose time is reserved outside the list, in the calendar. The shipped
-example is `oss` (say 3h/week on a side project). Set `TRACKS` in `render.mjs` to your own
-labels, or `[]` if nothing has its own block.
+A **track** is work whose time is reserved outside the list, in the calendar: a standing block
+for something that is not the main job. Put its label in `tracks` in `config.json`. Empty by
+default, because most weeks do not work that way.
 
 Track items always sit in `later`. They do not compete for `now`/`side`/`next` and are never
 backfill candidates, because they are not competing for the same hours — the block already
 holds them. The merit ranker would bury them regardless: track work is self-dated, never
-overdue, and never unblocks anyone else.
+overdue, and never unblocks anyone else. Pick the top track item at the start of a block;
+whatever you do not finish becomes a new track item in `later`.
 
 `TRACKS` in `render.mjs` lists which labels get a filter chip. That chip is the block-start view:
 open it, take the top item, and file whatever is unfinished at the end of the block as a new
@@ -128,7 +161,7 @@ open it, take the top item, and file whatever is unfinished at the end of the bl
 Bands, hats and tracks are **one** selection, never a combination. You are looking at a band, or
 at a hat, or at a track. Clicking any chip replaces the current view; clicking the active chip
 returns to `now`. Combining them was worse than useless: a hat left selected silently narrowed
-every subsequent view, and there is no reading of "side ∩ oss" worth a click.
+every subsequent view, and there is no reading of "side ∩ a track label" worth a click.
 
 A hat or a track spans bands, so those views open every band that has a hit and show the
 **filtered** count in the band header. Only the unfiltered `all` view keeps the
@@ -187,9 +220,15 @@ it wants from you, and link **out** to the client.
 the item is read-only reference material. If the next action is "reply", you have to open
 the client anyway, so an inlined body is dead weight that also bloats the item file.
 
-Unresolved: whether Spark exposes a deep link to a specific message (`readdle-spark://…`).
-Needs a 30-second test. Fallbacks that definitely work are the Gmail web permalink and the
-`message:<Message-ID>` scheme.
+**Deep links are yours to wire up.** The worklist links out to whatever tools you already use,
+and it has no integrations of its own: no mail client, no tracker, no chat. If you want an
+`email:` artifact to open in your mail client, find that client's URL scheme and use it in the
+deep-link slot. Same for anything else — a tracker, a docs tool, a dashboard. Two fallbacks work
+everywhere: a web permalink, and the `message:<Message-ID>` scheme for mail.
+
+The same applies to fetching. The agent resolves a link with whatever tools it has connected, so
+if you want it to read your mail, your tracker or your chat, connecting those (MCP servers, CLIs,
+whatever your setup uses) is a step you do yourself. Nothing here does it for you.
 
 ## Fixtures
 

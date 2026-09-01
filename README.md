@@ -5,9 +5,9 @@ you paste links, an agent resolves them into self-contained items, and a determi
 renders the views. Judgment at write time, determinism at read time. An LLM never writes a
 view, so if a view is ever wrong you re-render it instead of arguing with a model.
 
-The load-bearing design decision is the caps: **now 1, side 3, next 7**. Everything else in
-the system exists to keep those three bands honest. Success condition: one thing in your head
-and nineteen on a list.
+The load-bearing design decision is the caps: **now 1, side 3, next 7** by default, and whether
+going over them is allowed at all. Everything else in the system exists to keep those three bands
+honest. Success condition: one thing in your head and nineteen on a list.
 
 No dependencies. Node 18 or newer, stdlib only. Nothing calls out to a network at render time.
 
@@ -45,6 +45,7 @@ if the skill changed and leave your store alone.
 worklist/README.md                 the item contract (frontmatter fields, body sections)
 worklist/bin/render.mjs            deterministic renderer, builds views/
 worklist/bin/make-fixtures.mjs     fabricated demo items, so you can see it populated
+worklist/config.json               band caps + overflow policy, the only tunable file
 worklist/{items,views,attachments} empty; items/ is the only source of truth
 worklist/inbox.md                  raw captures, one line, zero decisions
 ```
@@ -81,13 +82,31 @@ session, even a bare "wNNN is done", refill the freed slot from `later` in the s
 merit, and report the promotion in one line with the reason.
 ```
 
-## Two things to set for yourself
+## Set these for yourself
 
-- **Hats** (`worklist/README.md`, "Hats"): the closed list of work modes your day gets batched
-  by. The shipped list is `incident investigate review pm analysis infra tooling admin`. Edit it.
-- **`TRACKS`** (top of `render.mjs`): labels for work that has its own recurring calendar
-  block, so it sits in `later` permanently and never competes for a band. Shipped as `['oss']`.
-  Set it to `[]` if nothing in your week works that way.
+Everything tunable is in `worklist/config.json`:
+
+```json
+{
+  "caps": { "now": 1, "side": 3, "next": 7 },
+  "overflow": "enforce-interactive",
+  "tracks": []
+}
+```
+
+- **`caps`** — how many items each live band holds. The defaults are the ones the whole design
+  argues for, but they are yours to change.
+- **`overflow`** — what happens when a band is at cap and something new belongs in it, which is
+  most of the time, because the bands are meant to be full. `tolerated` lets a band run over.
+  `enforce-interactive` means something must leave, and the agent asks you when the call is close.
+  `enforce-autonomous` means the same but it decides without asking. An item you have marked
+  `started` is never displaced silently in any mode.
+- **`tracks`** — labels for work that has its own recurring calendar block, so it sits in `later`
+  permanently and never competes for a band. Empty unless your week works that way.
+
+One thing lives outside the config: **Hats** (`worklist/README.md`, "Hats"), the closed list of
+work modes your day gets batched by. The shipped list is `incident investigate review pm analysis
+infra tooling admin`. Edit it to match how your week actually splits.
 
 ## Where to keep the store
 
@@ -100,10 +119,13 @@ remote it found; the decision is yours.
 
 - Capture from a browser hotkey or a Slack reaction. The README mentions both as intended;
   neither is built. Capture today is typing "stash this" in a session.
-- Anything that reaches a tracker, Slack or mail. The skill names Jira, Slack, Confluence and
-  Gmail MCPs as the tools it fetches with, because that is a common stack.
-  Whatever MCPs you have connected, the agent will use instead. The rule that matters is
-  resolving a link with a tool that reads the whole thing rather than a preview.
+- **Integrations of any kind.** There is no mail client, no tracker, no chat connector in here.
+  The skill names Jira, Slack, Confluence and Gmail as an example stack, and the agent will use
+  whatever tools you actually have connected instead. Hooking those up (MCP servers, CLIs,
+  whatever your setup uses) is your step, not something the installer does. Same for deep links:
+  if you want an `email:` artifact to open in your mail client, put that client's URL scheme in
+  the link slot yourself. The rule that matters is resolving a link with a tool that reads the
+  whole thing rather than a preview.
 
 ## Status
 

@@ -12,6 +12,9 @@ Store: `worklist/` at this repo's root. **Read `worklist/README.md` first** — 
 item contract (frontmatter fields, allowed values, body sections). Do not duplicate it here;
 it is the authority.
 
+**Then read `worklist/config.json`.** It sets the band caps and the overflow policy, and both
+are binding on every banding decision you make. Never assume 1/3/7 — read the numbers.
+
 Success condition: *one thing in your head and nineteen on a list.*
 
 ## Verbs
@@ -82,14 +85,35 @@ the blocker closes, exactly like a date gate. **Only gate on dependencies they s
 you inferred gets recorded and displayed but must not gate, because a wrong dependency hides
 work silently.
 
-**6. Band — you fill all three.** After filing, **`now` (1), `side` (3) and `next` (7) must
-be full** if there are enough live items. Do not leave them short and do not hand the choice
-back: proposing the order is the job. They review and correct.
+**6. Band — you fill all three.** After filing, **`now`, `side` and `next` must be full to
+their caps** if there are enough live items. Read the caps from `worklist/config.json`; the
+shipped defaults are `now` 1, `side` 3, `next` 7. Do not leave a band short and do not hand the
+choice back: proposing the order is the job. They review and correct.
 
-- **`now`** — the single most time-critical thing with a real action they can take. Something with a deadline of *today* outranks a bigger item with no date.
-- **`side`** — three lighter things to pick up while `now` is blocked. Prefer S/M; never put an L in `side` when `now` is also L.
-- **`next`** — up to seven, the promote-from queue.
-- Everything beyond those eleven goes to `later`, `waiting` (ball genuinely with someone else) or a date gate, and only shows under **all**.
+- **`now`** — the most time-critical thing with a real action they can take. Something with a deadline of *today* outranks a bigger item with no date.
+- **`side`** — lighter things to pick up while `now` is blocked. Prefer S/M; never put an L in `side` when `now` is also L.
+- **`next`** — the promote-from queue.
+- Everything beyond the three bands goes to `later`, `waiting` (ball genuinely with someone else) or a date gate, and only shows under **all**.
+
+**6a. When a band is already at its cap.** An empty slot is a filing failure, so the bands will
+normally be full, which means most new items arrive at a band that has no room. What you do then
+is set by `overflow` in `config.json`:
+
+| `overflow` | A band is at cap and something new belongs in it |
+|---|---|
+| `tolerated` | Put it in. Exceeding the cap is allowed; the renderer reports the count without treating it as a fault. |
+| `enforce-interactive` | Something must leave. If one candidate is clearly weakest, displace it, say so in one line, and move on. If the call is close, name the candidates and **ask**. |
+| `enforce-autonomous` | Something must leave. Choose it yourself, never ask, and report the swap in one line with the reason. |
+
+Under either `enforce-` mode a band must never end a turn over its cap. Displacement means a
+demotion to `next` or `later`, never a deletion, and it is written to the displaced item's Log.
+
+"Clearly weakest" is the same merit test as backfill: no date, blocking nobody, and a smaller
+consequence than the item arriving. Two candidates that are close is not clear — that is the
+case `enforce-interactive` exists to ask about.
+
+**The started-`now` rule outranks the policy.** An item carrying `started:` is never displaced
+silently in any mode, `enforce-autonomous` included. Say what would move and ask.
 
 **6b. Backfill on close, every time, unprompted.** Whenever an item leaves `now`, `side` or
 `next` for any reason (done, dropped, parked, moved), refill the gap in the same turn. This is
