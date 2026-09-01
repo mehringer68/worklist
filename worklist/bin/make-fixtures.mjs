@@ -123,10 +123,10 @@ const SPECS = [
     'Status updates during incidents were written from scratch under pressure and varied wildly in quality.',
     'Done — template in use for the last two incidents.'],
 
-  ['rewrite-in-rust', 'Rewrite the import pipeline in a faster language', 'dropped', 'infra', 1, 'L', null, 'none', '', '', ['rejected'], 0, 150,
+  ['rewrite-in-rust', 'Rewrite the import pipeline in a faster language', 'done', 'infra', 1, 'L', null, 'none', '', '', ['rejected'], 0, 150,
     'Considered and rejected. The pipeline is IO-bound, so the language is not the constraint. Kept as a record so it is not re-proposed.',
     'Dropped — not the bottleneck.'],
-  ['custom-dashboard-tool', 'Build an in-house dashboard tool instead of using the vendor one', 'dropped', 'tooling', 1, 'L', null, 'none', '', '', ['rejected'], 1, 120,
+  ['custom-dashboard-tool', 'Build an in-house dashboard tool instead of using the vendor one', 'done', 'tooling', 1, 'L', null, 'none', '', '', ['rejected'], 1, 120,
     'Rejected on maintenance cost. The vendor tool is adequate and the build would need permanent ownership.',
     'Dropped — buy over build.'],
 ];

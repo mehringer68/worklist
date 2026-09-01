@@ -32,7 +32,7 @@ if a view is ever wrong you re-render it, you do not argue with a model.
 |---|---|---|
 | `id` | `wNNN` | identity; never changes, never reused |
 | `title` | one line | must fit an index row |
-| `status` | `now` `side` `next` `waiting` `later` `done` `dropped` | cascading WIP caps, set in `config.json` (default **now 1, side 3, next 7**) |
+| `status` | `now` `side` `next` `waiting` `later` `done` | cascading WIP caps, set in `config.json` (default **now 1, side 3, next 7**) |
 | `hat` | closed list (see below) | what mode the work is in; the day is batched by this |
 | `impact` | 1-3 | 3 requires a falsifiable consequence in the body |
 | `effort` | S M L | |

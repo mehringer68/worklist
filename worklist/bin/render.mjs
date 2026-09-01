@@ -61,10 +61,16 @@ const TRACKS = CONFIG.tracks;
 // just without the warning, because the number is useful even when exceeding it is allowed.
 const ENFORCED = CONFIG.overflow !== 'tolerated';
 const NAG_DAYS = 3;
-const BANDS = ['now', 'side', 'next', 'waiting', 'later', 'done', 'dropped'];
+const BANDS = ['now', 'side', 'next', 'waiting', 'later', 'done'];
+// Bands with no quick-access chip. `done` is a section in `all` and nothing more: closed work is
+// the one thing you never need one click away, and a chip for it competes with the six that matter.
+const NO_CHIP = new Set(['done']);
 const WEIGHT = { S: 1, M: 2, L: 3 };
-// A closed item cannot be late. Dates on done and dropped items are history, not obligations.
-const CLOSED = new Set(['done', 'dropped']);
+// A closed item cannot be late. Dates on a closed item are history, not obligations.
+// `dropped` was a second closed status; it collapsed into `done`, because in practice nothing is
+// decided differently about an item that was abandoned versus one that was finished. Why it closed
+// belongs in its Log. Stores written before the merge are normalised on read, see parseItem.
+const CLOSED = new Set(['done']);
 
 const today = new Date(new Date().toISOString().slice(0, 10));
 const days = (a, b) => Math.round((a - b) / 86400000);
@@ -117,13 +123,17 @@ function parseItem(file) {
     body: sections,
   };
 
+  // Normalise before anything reads the status: `dropped` was merged into `done`, and a store
+  // written before that merge must not have its old items treated as still open.
+  if (it.status === 'dropped') it.status = 'done';
+
   it.age = fm.created ? days(today, new Date(fm.created)) : 0;
   it.dueIn = isDate(fm.due) ? days(new Date(fm.due), today) : null;
-  it.overdue = it.dueIn !== null && it.dueIn < 0 && !CLOSED.has(fm.status);
+  it.overdue = it.dueIn !== null && it.dueIn < 0 && !CLOSED.has(it.status);
   it.gate = isDate(fm.waiting_on) ? new Date(fm.waiting_on) : null;
   it.parked = it.gate !== null && it.gate > today;
   it.chaseDue =
-    fm.status === 'waiting' && !it.gate && it.age > NAG_DAYS ? it.age : null;
+    it.status === 'waiting' && !it.gate && it.age > NAG_DAYS ? it.age : null;
   return it;
 }
 
@@ -343,7 +353,7 @@ const row = (i) => `
 const BAND_DESC = {
   now: 'the one thing', side: 'pick up when now is blocked', next: 'promote from here',
   waiting: 'owed to you by someone else', later: 'deliberately not now',
-  done: 'finished', dropped: 'kept as a record so it is not re-proposed',
+  done: 'finished or abandoned — why is in the Log',
 };
 const OPEN_BY_DEFAULT = ['now', 'side', 'next', 'waiting'];
 
@@ -588,7 +598,7 @@ a.art:hover{border-color:var(--accent);color:var(--accent)}
 
 <div class="controls">
   <div class="seg">
-    ${BANDS.filter((s) => band(s).length).map((s) => `<button data-f="status:${s}"${s === 'now' ? ' class="on"' : ''}>${s}<em>${band(s).length}</em></button>`).join('')}
+    ${BANDS.filter((s) => !NO_CHIP.has(s) && band(s).length).map((s) => `<button data-f="status:${s}"${s === 'now' ? ' class="on"' : ''}>${s}<em>${band(s).length}</em></button>`).join('')}
     ${parked.length ? `<button data-f="status:__parked">parked<em>${parked.length}</em></button>` : ''}
     <button data-f="all">all<em>${items.length}</em></button>
   </div>

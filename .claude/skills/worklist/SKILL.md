@@ -119,7 +119,7 @@ work already begun is worth finishing, but under `enforce-autonomous` you displa
 it like any other, and under `enforce-interactive` it is an ordinary candidate.
 
 **6b. Backfill on close, every time, unprompted.** Whenever an item leaves `now`, `side` or
-`next` for any reason (done, dropped, parked, moved), refill the gap in the same turn. This is
+`next` for any reason (done, parked, moved), refill the gap in the same turn. This is
 not part of Filing, it applies in **any** session where an item closes, including a one-line
 "wNNN is done".
 
