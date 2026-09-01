@@ -100,7 +100,8 @@ Everything tunable is in `worklist/config.json`:
   most of the time, because the bands are meant to be full. `tolerated` lets a band run over.
   `enforce-interactive` means something must leave, and the agent asks you when the call is close.
   `enforce-autonomous` means the same but it decides without asking. An item you have marked
-  `started` is never displaced silently in any mode.
+  `started` is protected only while it is in `now`, where nothing displaces it silently; in `side`
+  and `next` it is an ordinary candidate that begun work weighs in favour of keeping.
 - **`tracks`** — labels for work that has its own recurring calendar block, so it sits in `later`
   permanently and never competes for a band. Empty unless your week works that way.
 

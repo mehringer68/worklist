@@ -137,8 +137,9 @@ every new item arrives at a band with no room:
 - **`enforce-autonomous`** — same, but it never asks. It decides and reports.
 
 Either `enforce-` mode means a band never ends a turn over cap. An item you have marked
-`started` is never displaced silently, in any mode. A bad value stops the render with a message
-naming the key, rather than falling back to a cap you did not choose.
+`started` is protected only in `now`, where it is never displaced silently in any mode; in `side`
+and `next` it weighs against displacement but does not block it. A bad value stops the render with
+a message naming the key, rather than falling back to a cap you did not choose.
 
 ## Tracks
 

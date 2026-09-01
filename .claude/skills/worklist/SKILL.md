@@ -112,8 +112,11 @@ demotion to `next` or `later`, never a deletion, and it is written to the displa
 consequence than the item arriving. Two candidates that are close is not clear — that is the
 case `enforce-interactive` exists to ask about.
 
-**The started-`now` rule outranks the policy.** An item carrying `started:` is never displaced
-silently in any mode, `enforce-autonomous` included. Say what would move and ask.
+**The started-`now` rule outranks the policy, and only there.** A `started:` item sitting in
+**`now`** is never displaced silently, `enforce-autonomous` included: say what would move and ask.
+In `side` and `next`, `started:` is not a veto. It weighs against displacing that item, because
+work already begun is worth finishing, but under `enforce-autonomous` you displace it and report
+it like any other, and under `enforce-interactive` it is an ordinary candidate.
 
 **6b. Backfill on close, every time, unprompted.** Whenever an item leaves `now`, `side` or
 `next` for any reason (done, dropped, parked, moved), refill the gap in the same turn. This is
