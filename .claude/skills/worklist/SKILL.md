@@ -71,7 +71,8 @@ take max existing + 1 across `items/` and any archive. Fill every frontmatter fi
 - `impact` 1-3; a 3 requires a falsifiable consequence written in *Why this matters*.
 - `effort` S (<1h) / M (a few hours) / L (multi-day).
 - `due` only if a real date exists. `due_source`: `external` (someone else's date), `committed` (they promised it), `self`, `none`.
-- `waiting_on` — a person when the ball is with them; a **date** to gate the item invisible until then.
+- `waiting_on` — a person when the ball is with them. Only ever a person.
+- `until` — a date to keep the item invisible until then. Only ever a date.
 - `hat` — closed list in the README. It decides how the day gets batched.
 - Capture enough content in the body that Slack, the tracker and the mailbox never need reopening.
 
@@ -81,7 +82,7 @@ needs its own status, owner or date, or when someone else could take it. Test: *
 → same item.* Splitting eagerly is what makes `next` unreadable.
 
 State dependencies with `blocked_by: wNNN` — it gates the item out of the live bands until
-the blocker closes, exactly like a date gate. **Only gate on dependencies they stated.** One
+the blocker closes, exactly like `until`. **Only gate on dependencies they stated.** One
 you inferred gets recorded and displayed but must not gate, because a wrong dependency hides
 work silently.
 
@@ -93,7 +94,7 @@ choice back: proposing the order is the job. They review and correct.
 - **`now`** — the most time-critical thing with a real action they can take. Something with a deadline of *today* outranks a bigger item with no date.
 - **`side`** — lighter things to pick up while `now` is blocked. Prefer S/M; never put an L in `side` when `now` is also L.
 - **`next`** — the promote-from queue.
-- Everything beyond the three bands goes to `later`, `waiting` (ball genuinely with someone else) or a date gate, and only shows under **all**.
+- Everything beyond the three bands goes to `later`, `waiting` (ball genuinely with someone else) or an `until` date gate, and only shows under **all**.
 
 **6a. When a band is already at its cap.** An empty slot is a filing failure, so the bands will
 normally be full, which means most new items arrive at a band that has no room. What you do then

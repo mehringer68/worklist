@@ -40,7 +40,8 @@ if (process.argv.includes('--clean')) {
 }
 
 // [slug, title, status, hat, impact, effort, dueOffset|null, dueSource, owner, waiting_on,
-//  labels, artifactCount, createdDaysAgo, why, next]
+//  labels, artifactCount, createdDaysAgo, why, next, untilOffset?]
+// waiting_on is a person. untilOffset, when present, parks the item until that many days ahead.
 const SPECS = [
   ['checkout-502s', 'Investigate intermittent 502s on the checkout pod during peak hours', 'side', 'investigate', 3, 'M', null, 'none', 'you', '', ['checkout', 'reliability'], 4, 12,
     'Sporadic 502s clustered around 11:00-13:00 on weekdays. No pattern established yet; could be pod eviction, upstream timeout, or connection-pool exhaustion.',
@@ -100,12 +101,12 @@ const SPECS = [
     'Stale docs are worse than no docs because people act on them.',
     'Audit pages by last-modified, delete rather than update where the system is gone.'],
 
-  ['security-training', 'Complete the annual security training module', 'later', 'admin', 1, 'S', null, 'none', 'you', ahead(45), ['mandatory'], 1, 5,
+  ['security-training', 'Complete the annual security training module', 'later', 'admin', 1, 'S', null, 'none', 'you', '', ['mandatory'], 1, 5,
     'Annual compliance requirement. Not due until the autumn window opens.',
-    'Nothing until the window opens.'],
-  ['budget-planning-cycle', 'Prepare infrastructure input for the next budget planning cycle', 'later', 'analysis', 2, 'M', null, 'none', 'you', ahead(70), ['planning', 'cost'], 1, 15,
+    'Nothing until the window opens.', 45],
+  ['budget-planning-cycle', 'Prepare infrastructure input for the next budget planning cycle', 'later', 'analysis', 2, 'M', null, 'none', 'you', '', ['planning', 'cost'], 1, 15,
     'Planning input is requested each cycle. Preparing it early is wasted work because the numbers move.',
-    'Nothing until the cycle opens.'],
+    'Nothing until the cycle opens.', 70],
 
   ['ticket-template-rollout', 'Roll out the standard ticket template across the board', 'done', 'pm', 2, 'S', null, 'none', 'you', '', ['process'], 2, 40,
     'Tickets arrived in inconsistent shapes, which made triage slow.',
@@ -147,10 +148,11 @@ const ART = [
 // the tool it is demonstrating. Everything demotable starts in `later`, then now/side/next are
 // filled to exactly their configured caps and the rest stays in `later`, which is where the
 // bulk of a real store lives anyway. Items with `waiting_on` set are never dealt into a live
-// band: the ball is with someone else, so they belong in `waiting`.
+// band: the ball is with someone else, so they belong in `waiting`. Items with an `until` are
+// not dealt either, because a parked item in a live band leaves that band short.
 const W = { S: 1, M: 2, L: 3 };
 const POOLABLE = new Set(['now', 'side', 'next', 'later']);
-const pool = SPECS.filter((sp) => POOLABLE.has(sp[2]) && sp[9] === '');
+const pool = SPECS.filter((sp) => POOLABLE.has(sp[2]) && sp[9] === '' && sp[15] === undefined);
 for (const sp of pool) sp[2] = 'later';
 
 // f900 below is 45 days overdue against a *committed* date, which is exactly what `now` is
@@ -168,7 +170,7 @@ claim(free().sort((a, b) => W[a[5]] - W[b[5]] || b[4] - a[4]).slice(0, CAPS.side
 claim(free().sort((a, b) => b[4] - a[4] || W[a[5]] - W[b[5]]).slice(0, CAPS.next), 'next');
 
 let n = 0;
-for (const [slug, title, status, hat, impact, effort, dueOff, dueSrc, owner, waitOn, labels, arts, created, why, next] of SPECS) {
+for (const [slug, title, status, hat, impact, effort, dueOff, dueSrc, owner, waitOn, labels, arts, created, why, next, untilOff] of SPECS) {
   const id = `f${String(++n).padStart(3, '0')}`;
   const fm = [
     '---',
@@ -183,6 +185,7 @@ for (const [slug, title, status, hat, impact, effort, dueOff, dueSrc, owner, wai
     `due_source: ${dueSrc}`,
     `owner: ${owner}`,
     `waiting_on: ${waitOn}`,
+    `until: ${untilOff === undefined ? '' : ahead(untilOff)}`,
     'labels:',
     ...labels.map((l) => `  - ${l}`),
     'visibility: private',
@@ -211,6 +214,7 @@ due: ${ago(45)}
 due_source: committed
 owner: you
 waiting_on:
+until:
 labels:
   - capacity
   - overdue-demo

@@ -39,13 +39,18 @@ if a view is ever wrong you re-render it, you do not argue with a model.
 | `due` | date or empty | |
 | `due_source` | `external` `committed` `self` `none` | who the date belongs to; stops self-invented urgency |
 | `owner` | name or empty | **empty by default** — assigning yourself is a decision |
-| `waiting_on` | person **or a date** | a date auto-resurfaces the item; that is the "remind me in September" primitive |
+| `waiting_on` | person or empty | who has the ball; a `waiting` item with a name here goes under "Chase these" after 3 days |
+| `until` | date or empty | parks the item until that date, then it comes back on its own; the "remind me in September" gate |
 | `labels` | free tags | filtering only, never ordering |
 | `visibility` | `private` `team` | pre-wires the future team view |
 | `started` | date or empty | you have begun it — never move it out of `now` without asking |
 | `parent` | `wNNN` or empty | one level only — no epics of epics |
 | `blocked_by` | `wNNN` ids, space/comma separated | gates the item until every blocker closes |
 | `artifacts` | `kind:key \| label \| url` | `jira:` `slack:` `email:` `pr:` `claude:` `session:` `web:` `file:` |
+
+`waiting_on` used to take a date as well. The renderer still reads a date there as `until`, so
+older items render as before. Write new dates to `until`, and move an old one across the next
+time you edit its item.
 
 **Deliberately absent:** priority, story points, sprint, workflow status. Their absence is
 what stops this becoming a second Jira. Rank is computed, never stored.
@@ -97,7 +102,7 @@ only — a parent's detail view lists its children, and each child links back.
 
 ### Dependencies
 
-`blocked_by: wNNN` gates an item exactly the way a date does: it drops out of the live bands
+`blocked_by: wNNN` gates an item exactly the way `until` does: it drops out of the live bands
 and comes back on its own when the blocker closes. Two triggers, one mechanism.
 
 **Stated blockers gate. Inferred blockers do not.** If you say B waits on A, gate it. If

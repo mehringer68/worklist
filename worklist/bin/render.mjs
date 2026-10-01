@@ -126,14 +126,23 @@ function parseItem(file) {
   // Normalise before anything reads the status: `dropped` was merged into `done`, and a store
   // written before that merge must not have its old items treated as still open.
   if (it.status === 'dropped') it.status = 'done';
+  // `waiting_on` is a person and `until` is a date. Stores written before the split put the date
+  // in `waiting_on`, so a date found there is read as `until`, unless `until` is already set.
+  // After this line `waiting_on` never holds a date, so nothing below has to tell the two apart.
+  if (isDate(it.waiting_on)) {
+    it.until = it.until || it.waiting_on;
+    it.waiting_on = '';
+  }
 
   it.age = fm.created ? days(today, new Date(fm.created)) : 0;
   it.dueIn = isDate(fm.due) ? days(new Date(fm.due), today) : null;
   it.overdue = it.dueIn !== null && it.dueIn < 0 && !CLOSED.has(it.status);
-  it.gate = isDate(fm.waiting_on) ? new Date(fm.waiting_on) : null;
-  it.parked = it.gate !== null && it.gate > today;
+  it.untilDate = isDate(it.until) ? new Date(it.until) : null;
+  it.parked = it.untilDate !== null && it.untilDate > today;
+  // A chase needs a person to chase. This also keeps an old `waiting` item whose date was moved
+  // to `until` above out of the chase list, where it would show up under a blank name.
   it.chaseDue =
-    it.status === 'waiting' && !it.gate && it.age > NAG_DAYS ? it.age : null;
+    it.status === 'waiting' && it.waiting_on && it.age > NAG_DAYS ? it.age : null;
   return it;
 }
 
@@ -154,7 +163,7 @@ function rank(a, b) {
 const items = readdirSync(ITEMS).filter((f) => f.endsWith('.md')).map(parseItem);
 const fixtures = items.filter((i) => i.fixture === 'true');
 
-// Gates: an item comes back on its own either when a date arrives (waiting_on: <date>)
+// Gates: an item comes back on its own either when a date arrives (until: <date>)
 // or when the item it waits on closes (blocked_by: wNNN). Same mechanism, two triggers.
 const byId = Object.fromEntries(items.map((i) => [i.id, i]));
 for (const i of items) {
@@ -176,8 +185,8 @@ function line(i) {
   const meta = [];
   if (i.overdue) meta.push(`OVERDUE ${-i.dueIn}d`);
   else if (i.dueIn !== null) meta.push(`due ${i.due}`);
-  if (i.waiting_on && !i.gate) meta.push(`waiting: ${i.waiting_on}`);
-  if (i.gate) meta.push(`gated to ${i.waiting_on}`);
+  if (i.waiting_on) meta.push(`waiting: ${i.waiting_on}`);
+  if (i.untilDate) meta.push(`gated to ${i.until}`);
   if (i.blocked) meta.push(`blocked by ${i.blockers.join(',')}`);
   if (i.started) meta.push('IN PROGRESS');
   if (i.kids.length) meta.push(`${i.kids.length} sub`);
@@ -237,7 +246,7 @@ if (chases.length) {
 const waitingMd =
   `# waiting on other people\n\n` +
   items
-    .filter((i) => i.status === 'waiting' && !i.gate)
+    .filter((i) => i.status === 'waiting' && i.waiting_on)
     .sort(rank)
     .map((i) => `## ${i.waiting_on} — ${i.title}\n\n\`${i.id}\` · ${i.age}d\n\n> Hi ${i.waiting_on}, anything on ${i.title.toLowerCase()}? Happy to take it back if it is not yours.\n`)
     .join('\n');
@@ -321,8 +330,8 @@ const dots = (n) => `<span class="imp" title="impact ${n}">${[1, 2, 3].map((i) =
 
 const flags = (i) => [
   i.overdue ? `<b class="f od">${-i.dueIn}d over</b>` : i.dueIn !== null ? `<b class="f due">${fmt(i.due)}</b>` : '',
-  i.waiting_on && !i.gate ? `<b class="f wt">${esc(i.waiting_on)}</b>` : '',
-  i.gate ? `<b class="f gt">${fmt(i.waiting_on)}</b>` : '',
+  i.waiting_on ? `<b class="f wt">${esc(i.waiting_on)}</b>` : '',
+  i.untilDate ? `<b class="f gt">${fmt(i.until)}</b>` : '',
   i.blocked ? `<b class="f bl">blocked by ${i.blockers.join(', ')}</b>` : '',
   i.kids.length ? `<b class="f kd">${i.kids.length} sub</b>` : '',
   i.started ? '<b class="f st">in progress</b>' : '',
@@ -373,8 +382,9 @@ const sections =
 const payload = items.map((i) => ({
   id: i.id, title: i.title, status: i.status, hat: i.hat, impact: i.impact, effort: i.effort,
   due: i.due || '', due_source: i.due_source || '', owner: i.owner || '', waiting_on: i.waiting_on || '',
+  until: i.untilDate ? i.until : '',
   labels: i.labels, visibility: i.visibility || '', created: i.created || '', age: i.age,
-  dueIn: i.dueIn, overdue: i.overdue, gated: !!i.gate, fixture: i.fixture === 'true',
+  dueIn: i.dueIn, overdue: i.overdue, fixture: i.fixture === 'true',
   blockers: i.blockers.map((id) => ({ id, title: byId[id].title })),
   parent: i.parent && byId[i.parent] ? { id: i.parent, title: byId[i.parent].title } : null,
   kids: i.kids.map((k) => ({ id: k.id, title: k.title, status: k.status })),
@@ -749,7 +759,7 @@ function open(id){
     field('Status',o.status)+field('Impact',o.impact+' of 3')+field('Effort',o.effort)+
     field('Owner',o.owner||'<span style="color:var(--accent)">unowned</span>')+
     field('Due',o.due?o.due+' <span style="color:var(--faint)">('+o.due_source+')</span>':'')+
-    field(o.gated?'Gated until':'Waiting on',o.waiting_on)+
+    field('Waiting on',o.waiting_on)+field('Gated until',o.until)+
     field('Created',o.created+' <span style="color:var(--faint)">('+o.age+'d ago)</span>')+
     field('Visibility',o.visibility)+'</dl></div>';
   if(o.body.why)h+='<div class="block"><h4>Why this matters</h4>'+para(o.body.why)+'</div>';
