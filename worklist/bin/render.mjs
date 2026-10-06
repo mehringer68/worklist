@@ -75,6 +75,15 @@ const CLOSED = new Set(['done']);
 const today = new Date(new Date().toISOString().slice(0, 10));
 const days = (a, b) => Math.round((a - b) / 86400000);
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test((s || '').trim());
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+// "Mon 12 Oct": short enough for a group heading, and the weekday matters because a gate lands on
+// a working day or it does not.
+const dayDate = (s) => {
+  const d = new Date(s);
+  const year = d.getUTCFullYear() !== new Date().getUTCFullYear() ? ` ${d.getUTCFullYear()}` : '';
+  return `${DAY[d.getUTCDay()].slice(0, 3)} ${d.getUTCDate()} ${MON[d.getUTCMonth()]}${year}`;
+};
 
 // ---------- parse ----------
 
@@ -174,8 +183,34 @@ for (const i of items) {
   i.kids = [];
 }
 for (const i of items) if (i.parent && byId[i.parent]) byId[i.parent].kids.push(i);
-const band = (s) => items.filter((i) => i.status === s && !i.parked).sort(rank);
-const parked = items.filter((i) => i.parked).sort(rank);
+// "Not yours right now" is one list. A `waiting` item is someone else's move; a parked item waits
+// for a date or for another item to close. Both answer the same question, what comes back to you
+// and when, so the `waiting` band holds all of them, grouped by who has the ball and then by the
+// date each one returns. A parked item leaves its own band (now, side, next, later) while it waits.
+const away = items.filter((i) => !CLOSED.has(i.status) && (i.status === 'waiting' || i.parked));
+const isAway = new Set(away);
+const band = (s) =>
+  (s === 'waiting' ? away : items.filter((i) => i.status === s && !isAway.has(i))).sort(rank);
+
+function groupAway(list) {
+  const groups = new Map();
+  for (const i of [...list].sort(rank)) {
+    const g = i.waiting_on
+      ? { key: `p:${i.waiting_on}`, label: i.waiting_on, order: 0 }
+      : i.untilDate && i.untilDate > today
+        ? { key: `d:${i.until}`, label: `back ${dayDate(i.until)}`, order: 1 }
+        : i.blocked
+          ? { key: `b:${i.blockers.join(',')}`, label: `after ${i.blockers.join(', ')} closes`, order: 2 }
+          : { key: 'x', label: 'no person or date set', order: 3 };
+    if (!groups.has(g.key)) groups.set(g.key, { ...g, items: [] });
+    groups.get(g.key).items.push(i);
+  }
+  // People first, the one you have waited on longest at the top; then dates, soonest first.
+  const oldest = (g) => Math.max(...g.items.map((i) => i.age));
+  return [...groups.values()].sort((a, b) =>
+    a.order - b.order || (a.order === 0 ? oldest(b) - oldest(a) : 0) || a.key.localeCompare(b.key));
+}
+const awayGroups = groupAway(away);
 
 // ---------- md views ----------
 
@@ -200,20 +235,24 @@ let index = `# worklist — ${items.length} items (${fixtures.length} fixtures, 
 for (const s of BANDS) {
   const b = band(s);
   if (!b.length) continue;
+  if (s === 'waiting') {
+    index += `\n## waiting — not yours right now (${b.length})\n`;
+    for (const g of awayGroups)
+      index += `\n### ${g.label}\n\n\`\`\`\n${g.items.map(line).join('\n')}\n\`\`\`\n`;
+    continue;
+  }
   const cap = CAPS[s] && b.length > CAPS[s]
     ? (ENFORCED ? `  ⚠ OVER CAP of ${CAPS[s]}` : `  (over the tolerated cap of ${CAPS[s]})`)
     : '';
   index += `\n## ${s} (${b.length})${cap}\n\n\`\`\`\n${b.map(line).join('\n')}\n\`\`\`\n`;
-}
-if (parked.length) {
-  index += `\n## parked — auto-resurface on their gate date (${parked.length})\n\n\`\`\`\n${parked.map(line).join('\n')}\n\`\`\`\n`;
 }
 
 const nowB = band('now');
 const sideB = band('side');
 const nextB = band('next');
 const overdue = items.filter((i) => i.overdue && !i.parked);
-const chases = items.filter((i) => i.chaseDue);
+// A gated item does not nag before its date: waiting on someone until a set day means "not before".
+const chases = items.filter((i) => i.chaseDue && !i.parked);
 
 const oneLine = (s) => (s || '').split('\n\n')[0].replace(/\n/g, ' ').trim();
 const brief = (i) =>
@@ -243,21 +282,32 @@ if (chases.length) {
   todayMd += chases.map((i) => `- ${i.waiting_on} on **${i.title}** — ${i.age}d, no movement`).join('\n');
 }
 
+// One list, the same groups as the `waiting` band. A chase line only where someone owes you a move
+// and no date says "not yet".
 const waitingMd =
-  `# waiting on other people\n\n` +
-  items
-    .filter((i) => i.status === 'waiting' && i.waiting_on)
-    .sort(rank)
-    .map((i) => `## ${i.waiting_on} — ${i.title}\n\n\`${i.id}\` · ${i.age}d\n\n> Hi ${i.waiting_on}, anything on ${i.title.toLowerCase()}? Happy to take it back if it is not yours.\n`)
-    .join('\n');
+  `# waiting — not yours right now\n\nSomeone else's move, a date, or another item to close first. ` +
+  `Grouped by who has the ball, then by the date each item comes back.\n` +
+  awayGroups
+    .map((g) =>
+      `\n## ${g.label}\n\n` +
+      g.items
+        .map((i) => {
+          const bits = [`\`${i.id}\``, `${i.age}d`];
+          if (i.untilDate && i.untilDate > today) bits.push(`back ${dayDate(i.until)}`);
+          if (i.blocked) bits.push(`after ${i.blockers.join(', ')}`);
+          const chase = i.waiting_on && !i.parked
+            ? `\n  > Hi ${i.waiting_on}, anything on ${i.title.toLowerCase()}? Happy to take it back if it is not yours.`
+            : '';
+          return `- **${i.title}** · ${bits.join(' · ')}${chase}`;
+        })
+        .join('\n'))
+    .join('\n') + '\n';
 
 // ---------- html ----------
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const hats = [...new Set(items.map((i) => i.hat))].sort();
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const fmt = (s) => { const d = new Date(s); return `${d.getUTCDate()} ${MON[d.getUTCMonth()]}`; };
 const niceDate = `${DAY[today.getUTCDay()]}, ${today.getUTCDate()} ${MON[today.getUTCMonth()]}`;
 const first = (s) => (s || '').split('\n\n')[0].replace(/\n/g, ' ').trim();
@@ -361,7 +411,7 @@ const row = (i) => `
 
 const BAND_DESC = {
   now: 'the one thing', side: 'pick up when now is blocked', next: 'promote from here',
-  waiting: 'owed to you by someone else', later: 'deliberately not now',
+  waiting: "not yours right now: someone else's move, a date, or another item to close", later: 'deliberately not now',
   done: 'finished or abandoned — why is in the Log',
 };
 const OPEN_BY_DEFAULT = ['now', 'side', 'next', 'waiting'];
@@ -375,9 +425,23 @@ const section = (key, list, desc, open) => list.length ? `
   <div class="rows">${list.map(key === 'now' ? hero : row).join('')}</div>
 </details>` : '';
 
-const sections =
-  BANDS.map((s) => section(s, band(s), BAND_DESC[s], OPEN_BY_DEFAULT.includes(s))).join('') +
-  section('parked', parked, 'out of sight until its gate opens — a date, or the item it waits on', false);
+// The waiting band renders its groups inside one section, so its chip, count and filters behave
+// like any other band. A group is a wrapper, not an item, which is why the row rules below use a
+// descendant selector rather than `.rows>.item`.
+const groupedSection = (key, groups, total, desc, open) => total ? `
+<details class="band" data-band="${key}" data-default-open="${open ? 1 : 0}" ${open ? 'open' : ''}>
+  <summary class="bandhead">
+    <span class="bname">${key}</span><span class="bdesc">${esc(desc)}</span>
+    <span class="bcount" data-total="${total}" data-full="${total}">${total}</span>
+  </summary>
+  <div class="rows">${groups.map((g) => `
+    <div class="grp"><div class="gh">${esc(g.label)}<span class="gc">${g.items.length}</span></div>${g.items.map(row).join('')}</div>`).join('')}</div>
+</details>` : '';
+
+const sections = BANDS.map((s) =>
+  s === 'waiting'
+    ? groupedSection(s, awayGroups, away.length, BAND_DESC[s], OPEN_BY_DEFAULT.includes(s))
+    : section(s, band(s), BAND_DESC[s], OPEN_BY_DEFAULT.includes(s))).join('');
 
 const payload = items.map((i) => ({
   id: i.id, title: i.title, status: i.status, hat: i.hat, impact: i.impact, effort: i.effort,
@@ -486,11 +550,18 @@ header{padding:2.5rem 0 1.5rem}
    inside them did not. Do not weaken this to a specificity trick — the next display rule added
    here would silently break filtering again. */
 .item[hidden]{display:none!important}
-.rows>.item:not(.hero){display:grid;grid-template-columns:2.5rem 1.8rem 5.6rem minmax(0,1fr) auto;
+.rows .item:not(.hero){display:grid;grid-template-columns:2.5rem 1.8rem 5.6rem minmax(0,1fr) auto;
   gap:.85rem;align-items:center;padding:.62rem .75rem;border-radius:10px;cursor:pointer;
   border-bottom:1px solid var(--hair);transition:background .13s}
-.rows>.item:not(.hero):hover{background:var(--panel);border-bottom-color:transparent;
+.rows .item:not(.hero):hover{background:var(--panel);border-bottom-color:transparent;
   box-shadow:0 1px 2px rgba(90,60,20,.06)}
+.grp{margin-bottom:.55rem}
+.grp[hidden]{display:none}
+.gh{display:flex;align-items:baseline;gap:.5rem;padding:.55rem .75rem .15rem;font-size:12px;
+  font-weight:650;color:var(--wt)}
+.gh .gc{font-weight:500;color:var(--faint);font-variant-numeric:tabular-nums}
+/* The group heading already names who has the ball, so the per-row name chip only repeats it. */
+.band[data-band=waiting] .f.wt{display:none}
 .id{font-size:11px;color:var(--faint)}
 .imp{display:inline-flex;gap:2.5px}
 .imp i{width:5px;height:5px;border-radius:50%;background:var(--line);display:block}
@@ -594,7 +665,7 @@ a.art:hover{border-color:var(--accent);color:var(--accent)}
 .tags span::before{content:"#";opacity:.5}
 
 @media(max-width:760px){
-  .rows>.item:not(.hero){grid-template-columns:2.4rem 1.8rem minmax(0,1fr);row-gap:.2rem}
+  .rows .item:not(.hero){grid-template-columns:2.4rem 1.8rem minmax(0,1fr);row-gap:.2rem}
   .hat{grid-column:1/3}.meta{grid-column:3;justify-content:flex-end}
   .sheet{padding:1.5rem 1.25rem 1.75rem}
 }
@@ -609,7 +680,6 @@ a.art:hover{border-color:var(--accent);color:var(--accent)}
 <div class="controls">
   <div class="seg">
     ${BANDS.filter((s) => !NO_CHIP.has(s) && band(s).length).map((s) => `<button data-f="status:${s}"${s === 'now' ? ' class="on"' : ''}>${s}<em>${band(s).length}</em></button>`).join('')}
-    ${parked.length ? `<button data-f="status:__parked">parked<em>${parked.length}</em></button>` : ''}
     <button data-f="all">all<em>${items.length}</em></button>
   </div>
   <div class="hats">
@@ -626,8 +696,8 @@ a.art:hover{border-color:var(--accent);color:var(--accent)}
 <div class="stats" id="stats" hidden>
   <div><b>${items.length}</b>items</div>
   <div class="${overdue.length ? 'alert' : ''}"><b>${overdue.length}</b>past their date</div>
-  <div class="${chases.length ? 'alert' : ''}"><b>${chases.length}</b>waiting on someone</div>
-  <div><b>${parked.length}</b>parked</div>
+  <div class="${chases.length ? 'alert' : ''}"><b>${chases.length}</b>to chase</div>
+  <div><b>${away.length}</b>waiting</div>
   ${fixtures.length ? `<div><b>${fixtures.length}</b>fabricated fixtures</div>` : ''}
 </div>
 
@@ -652,6 +722,7 @@ var DATA={};JSON.parse(document.getElementById('data').textContent).forEach(func
 var chips=[].slice.call(document.querySelectorAll('.controls [data-f]')),
     rows=[].slice.call(document.querySelectorAll('.item')),
     bands=[].slice.call(document.querySelectorAll('.band')),
+    groups=[].slice.call(document.querySelectorAll('.grp')),
     stats=document.getElementById('stats'),
     empty=document.getElementById('empty'),
     fxBtn=document.getElementById('fxtoggle'),
@@ -663,12 +734,16 @@ function match(r){
   var p=sel.split(':'), v=p[1];
   if(p[0]==='hat')return r.dataset.hat===v;
   if(p[0]==='label')return (' '+(r.dataset.labels||'')+' ').indexOf(' '+v+' ')>-1;
-  if(v==='__parked')return r.closest('[data-band=parked]')!==null;
-  return r.dataset.status===v&&r.closest('[data-band=parked]')===null;
+  // The waiting band holds everything that is not yours right now, whatever its status, so its
+  // chip matches by section. Every other band chip matches by status and skips that section.
+  if(v==='waiting')return r.closest('[data-band=waiting]')!==null;
+  return r.dataset.status===v&&r.closest('[data-band=waiting]')===null;
 }
 function apply(){
   var any=false;
   rows.forEach(function(r){r.hidden=!match(r);if(!r.hidden)any=true});
+  // A group heading with no visible rows under it is noise, so it hides with its rows.
+  groups.forEach(function(g){g.hidden=!g.querySelector('.item:not([hidden])')});
   bands.forEach(function(b){
     var hits=[].slice.call(b.querySelectorAll('.item')).filter(function(r){return !r.hidden}),
         vis=hits.length>0, c=b.querySelector('.bcount');
@@ -796,7 +871,7 @@ writeFileSync(join(VIEWS, 'index.html'), html);
 
 console.log(`rendered ${items.length} items -> views/{index.md,today.md,waiting.md,index.html}`);
 console.log(`  now ${nowB.length}/${CAPS.now} · side ${sideB.length}/${CAPS.side} · next ${nextB.length}/${CAPS.next}`);
-console.log(`  overdue ${overdue.length} · chases ${chases.length} · parked ${parked.length}`);
+console.log(`  overdue ${overdue.length} · chases ${chases.length} · waiting ${away.length}`);
 const LIVE_BANDS = { now: nowB, side: sideB, next: nextB };
 const over = Object.keys(LIVE_BANDS).filter((s) => LIVE_BANDS[s].length > CAPS[s]);
 const under = Object.keys(LIVE_BANDS).filter((s) => LIVE_BANDS[s].length < CAPS[s]);
