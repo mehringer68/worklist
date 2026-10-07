@@ -39,7 +39,7 @@ if a view is ever wrong you re-render it, you do not argue with a model.
 | `due` | date or empty | |
 | `due_source` | `external` `committed` `self` `none` | who the date belongs to; stops self-invented urgency |
 | `owner` | name or empty | **empty by default** — assigning yourself is a decision |
-| `waiting_on` | person or empty | who has the ball; a `waiting` item with a name here goes under "Chase these" after 3 days |
+| `waiting_on` | person or empty | who has the ball; a `waiting` item with a name here goes under "Chase these" after 3 days with no new dated `## Log` entry (counted from `created` if the Log has none) |
 | `until` | date or empty | parks the item until that date, then it comes back on its own; the "remind me in September" gate |
 | `labels` | free tags | filtering only, never ordering |
 | `visibility` | `private` `team` | pre-wires the future team view |

@@ -144,6 +144,12 @@ function parseItem(file) {
   }
 
   it.age = fm.created ? days(today, new Date(fm.created)) : 0;
+  // A chase measures silence, not age: days since the latest dated Log entry, or since `created`
+  // when the Log has none. An item filed in July and nudged yesterday has been quiet one day.
+  // The latest date wins, not the last line, because Log entries are not always in order.
+  const moves = [fm.created, ...[...(sections.log || '').matchAll(/^- (\d{4}-\d{2}-\d{2})\b/gm)].map((x) => x[1])];
+  const lastMove = moves.filter(isDate).sort().at(-1);
+  it.quiet = lastMove ? days(today, new Date(lastMove)) : it.age;
   it.dueIn = isDate(fm.due) ? days(new Date(fm.due), today) : null;
   it.overdue = it.dueIn !== null && it.dueIn < 0 && !CLOSED.has(it.status);
   it.untilDate = isDate(it.until) ? new Date(it.until) : null;
@@ -151,7 +157,7 @@ function parseItem(file) {
   // A chase needs a person to chase. This also keeps an old `waiting` item whose date was moved
   // to `until` above out of the chase list, where it would show up under a blank name.
   it.chaseDue =
-    it.status === 'waiting' && it.waiting_on && it.age > NAG_DAYS ? it.age : null;
+    it.status === 'waiting' && it.waiting_on && it.quiet > NAG_DAYS ? it.quiet : null;
   return it;
 }
 
@@ -279,7 +285,7 @@ if (overdue.length) {
 }
 if (chases.length) {
   todayMd += `\n\n## Chase these (${chases.length})\n\n`;
-  todayMd += chases.map((i) => `- ${i.waiting_on} on **${i.title}** — ${i.age}d, no movement`).join('\n');
+  todayMd += chases.map((i) => `- ${i.waiting_on} on **${i.title}** — ${i.chaseDue}d, no movement`).join('\n');
 }
 
 // One list, the same groups as the `waiting` band. A chase line only where someone owes you a move
