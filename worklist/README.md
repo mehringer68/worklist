@@ -15,7 +15,7 @@ worklist/
   views/                    100% generated, never hand-edited
     index.md  index.html    complete list, one short line per item
     today.md                the `now` band + overdue + stale chases
-    waiting.md              what other people owe you
+    waiting.md              not yours right now: other people's moves and dated gates
   bin/render.mjs            deterministic renderer, no LLM, no dependencies
   config.json               band caps + overflow policy — the only tunable file
   inbox.md                  raw captures, one line, zero decisions
@@ -39,7 +39,7 @@ if a view is ever wrong you re-render it, you do not argue with a model.
 | `due` | date or empty | |
 | `due_source` | `external` `committed` `self` `none` | who the date belongs to; stops self-invented urgency |
 | `owner` | name or empty | **empty by default** — assigning yourself is a decision |
-| `waiting_on` | person or empty | who has the ball; a `waiting` item with a name here goes under "Chase these" after 3 days |
+| `waiting_on` | person or empty | who has the ball; a `waiting` item with a name here goes under "Chase these" after 3 days with no new dated `## Log` entry (counted from `created` if the Log has none) |
 | `until` | date or empty | parks the item until that date, then it comes back on its own; the "remind me in September" gate |
 | `labels` | free tags | filtering only, never ordering |
 | `visibility` | `private` `team` | pre-wires the future team view |
@@ -104,6 +104,14 @@ only — a parent's detail view lists its children, and each child links back.
 
 `blocked_by: wNNN` gates an item exactly the way `until` does: it drops out of the live bands
 and comes back on its own when the blocker closes. Two triggers, one mechanism.
+
+### Waiting
+
+Everything that is not yours right now shows in one `waiting` list: items with `status: waiting`
+(someone else's move) and gated items (a future `until`, or an open `blocked_by`), whatever their
+status. The list is grouped by who has the ball, longest wait first, then by the date each item
+comes back. A gated item never shows under "Chase these" before its date, even with a
+`waiting_on` name: waiting on someone until a set day means "not before".
 
 **Stated blockers gate. Inferred blockers do not.** If you say B waits on A, gate it. If
 *you* infer it from a thread, record it and show it, but leave the item pickable — a wrong
